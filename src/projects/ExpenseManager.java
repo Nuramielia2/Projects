@@ -73,4 +73,12 @@ public class ExpenseManager {
         for (Expense e : expenses) if (e.getId() == id) return e;
         return null;
     }
+    
+    /**
+     * Returns the list of all expenses
+     * @return List of expenses
+     */
+    public List<Expense> getExpenses() {
+        return expenses;
+    }
 } 

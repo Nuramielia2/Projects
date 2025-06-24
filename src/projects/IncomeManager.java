@@ -292,7 +292,7 @@ public class IncomeManager {
      * @return List of income records
      */
     public List<Income> getIncomeRecords() {
-        return new ArrayList<>(incomeRecords);
+        return incomeRecords;
     }
     
     /**

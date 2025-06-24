@@ -9,6 +9,7 @@ import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 
 /**
  * Simple web-based Personal Budget Manager using Java's built-in HTTP server
@@ -203,8 +204,16 @@ public class WebBudgetManager {
                 String source = params.get("source");
                 String dateStr = params.get("date");
                 
-                // Create income record (simplified)
-                System.out.println("Income recorded: $" + amount + " from " + source);
+                // Parse date and create income record
+                try {
+                    java.time.LocalDate date = java.time.LocalDate.parse(dateStr);
+                    Income income = new Income(amount, source, date);
+                    incomeManager.getIncomeRecords().add(income);
+                    System.out.println("✅ Income recorded: $" + amount + " from " + source);
+                    System.out.println("📊 Total income records now: " + incomeManager.getIncomeRecords().size());
+                } catch (Exception e) {
+                    System.out.println("❌ Error recording income: " + e.getMessage());
+                }
                 
                 exchange.getResponseHeaders().add("Location", "/");
                 exchange.sendResponseHeaders(302, -1);
@@ -236,8 +245,15 @@ public class WebBudgetManager {
                 String category = params.get("category");
                 String dateStr = params.get("date");
                 
-                // Create expense record (simplified)
-                System.out.println("Expense recorded: $" + amount + " for " + category);
+                // Parse date and create expense record
+                try {
+                    java.time.LocalDate date = java.time.LocalDate.parse(dateStr);
+                    Expense expense = new Expense(amount, category, date);
+                    expenseManager.getExpenses().add(expense);
+                    System.out.println("✅ Expense recorded: $" + amount + " for " + category);
+                } catch (Exception e) {
+                    System.out.println("❌ Error recording expense: " + e.getMessage());
+                }
                 
                 exchange.getResponseHeaders().add("Location", "/");
                 exchange.sendResponseHeaders(302, -1);
@@ -258,6 +274,13 @@ public class WebBudgetManager {
                 exchange.getResponseHeaders().add("Location", "/");
                 exchange.sendResponseHeaders(302, -1);
                 return;
+            }
+            
+            // Debug: Check how many records are in the manager
+            List<Income> incomes = incomeManager.getIncomeRecords();
+            System.out.println("🔍 ViewIncome: Found " + incomes.size() + " income records");
+            for (Income income : incomes) {
+                System.out.println("  - Income #" + income.getId() + ": $" + income.getAmount() + " from " + income.getSource());
             }
             
             String html = generateViewIncomePage();
@@ -288,7 +311,7 @@ public class WebBudgetManager {
         html.append("<html><head><title>Personal Budget Manager</title>");
         html.append("<style>");
         html.append("body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }");
+        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
         html.append(".header { text-align: center; color: #333; margin-bottom: 30px; }");
         html.append(".form-group { margin-bottom: 15px; }");
         html.append("label { display: block; margin-bottom: 5px; font-weight: bold; }");
@@ -382,27 +405,69 @@ public class WebBudgetManager {
     }
     
     private static String generateViewIncomePage() {
-        return "<!DOCTYPE html><html><head><title>View Income</title>" +
-               "<style>body { font-family: Arial, sans-serif; margin: 20px; }" +
-               ".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }" +
-               "</style></head><body>" +
-               "<div class='container'>" +
-               "<h1>📊 Income Records</h1>" +
-               "<p>No income records found.</p>" +
-               "<p><a href='/'>Back to Home</a></p>" +
-               "</div></body></html>";
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html><html><head><title>View Income</title>");
+        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
+        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
+        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #4CAF50; }");
+        html.append(".total { font-weight: bold; font-size: 18px; color: #4CAF50; margin-top: 20px; }");
+        html.append("</style></head><body>");
+        html.append("<div class='container'>");
+        html.append("<h1>📊 Income Records</h1>");
+        
+        List<Income> incomes = incomeManager.getIncomeRecords();
+        if (incomes.isEmpty()) {
+            html.append("<p>No income records found.</p>");
+        } else {
+            double total = 0;
+            for (Income income : incomes) {
+                html.append("<div class='record'>");
+                html.append("<strong>ID:</strong> ").append(income.getId()).append("<br>");
+                html.append("<strong>Amount:</strong> $").append(String.format("%.2f", income.getAmount())).append("<br>");
+                html.append("<strong>Source:</strong> ").append(income.getSource()).append("<br>");
+                html.append("<strong>Date:</strong> ").append(income.getDate());
+                html.append("</div>");
+                total += income.getAmount();
+            }
+            html.append("<div class='total'>Total Income: $").append(String.format("%.2f", total)).append("</div>");
+        }
+        
+        html.append("<p><a href='/'>Back to Home</a></p>");
+        html.append("</div></body></html>");
+        return html.toString();
     }
     
     private static String generateViewExpensePage() {
-        return "<!DOCTYPE html><html><head><title>View Expenses</title>" +
-               "<style>body { font-family: Arial, sans-serif; margin: 20px; }" +
-               ".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }" +
-               "</style></head><body>" +
-               "<div class='container'>" +
-               "<h1>📊 Expense Records</h1>" +
-               "<p>No expense records found.</p>" +
-               "<p><a href='/'>Back to Home</a></p>" +
-               "</div></body></html>";
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html><html><head><title>View Expenses</title>");
+        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
+        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
+        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #f44336; }");
+        html.append(".total { font-weight: bold; font-size: 18px; color: #f44336; margin-top: 20px; }");
+        html.append("</style></head><body>");
+        html.append("<div class='container'>");
+        html.append("<h1>📊 Expense Records</h1>");
+        
+        List<Expense> expenses = expenseManager.getExpenses();
+        if (expenses.isEmpty()) {
+            html.append("<p>No expense records found.</p>");
+        } else {
+            double total = 0;
+            for (Expense expense : expenses) {
+                html.append("<div class='record'>");
+                html.append("<strong>ID:</strong> ").append(expense.getId()).append("<br>");
+                html.append("<strong>Amount:</strong> $").append(String.format("%.2f", expense.getAmount())).append("<br>");
+                html.append("<strong>Category:</strong> ").append(expense.getCategory()).append("<br>");
+                html.append("<strong>Date:</strong> ").append(expense.getDate());
+                html.append("</div>");
+                total += expense.getAmount();
+            }
+            html.append("<div class='total'>Total Expenses: $").append(String.format("%.2f", total)).append("</div>");
+        }
+        
+        html.append("<p><a href='/'>Back to Home</a></p>");
+        html.append("</div></body></html>");
+        return html.toString();
     }
     
     private static void sendResponse(HttpExchange exchange, String response) throws IOException {

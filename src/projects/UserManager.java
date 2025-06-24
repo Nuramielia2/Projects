@@ -2,6 +2,7 @@ package projects;
 
 import java.util.ArrayList;
 import java.util.List;
+import projects.UserDAO;
 
 public class UserManager {
     private List<User> users = new ArrayList<>();
@@ -10,7 +11,9 @@ public class UserManager {
     public boolean register(String username, String password, String email) {
         if (findUser(username) != null) return false;
         users.add(new User(username, password, email));
-        return true;
+        // Save to database
+        UserDAO userDAO = new UserDAO();
+        return userDAO.addUser(username, password, email);
     }
 
     public boolean login(String username, String password) {

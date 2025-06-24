@@ -52,10 +52,18 @@ public class IncomeManager {
             Income income = new Income(amount, source, date);
             incomeRecords.add(income);
             
-            System.out.println("✓ Income recorded successfully!");
+            // Save to database
+            IncomeDAO incomeDAO = new IncomeDAO();
+            boolean dbSuccess = incomeDAO.addIncome(amount, source, date);
+            if (dbSuccess) {
+                System.out.println("✓ Income recorded successfully!");
+            } else {
+                System.out.println("✗ Error saving income to database.");
+            }
+            
             System.out.println(income);
             
-            return true;
+            return dbSuccess;
             
         } catch (Exception e) {
             System.out.println("✗ Error recording income: " + e.getMessage());

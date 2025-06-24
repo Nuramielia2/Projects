@@ -15,7 +15,14 @@ public class BudgetManager {
     public void createBudget(double amount, String timePeriod, LocalDate startDate, LocalDate endDate, String description) {
         Budget budget = new Budget(amount, timePeriod, startDate, endDate, description);
         budgets.add(budget);
-        System.out.println("✅ Budget created: " + budget);
+        // Save to database
+        BudgetDAO budgetDAO = new BudgetDAO();
+        boolean dbSuccess = budgetDAO.addBudget(amount, timePeriod, startDate, endDate, description);
+        if (dbSuccess) {
+            System.out.println("✅ Budget created and saved to database: " + budget);
+        } else {
+            System.out.println("❌ Error saving budget to database.");
+        }
     }
     
     public List<Budget> getAllBudgets() {

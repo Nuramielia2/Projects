@@ -17,7 +17,14 @@ public class ExpenseManager {
         System.out.print("Enter date (YYYY-MM-DD) or press Enter for today: ");
         LocalDate date = getValidDate();
         expenses.add(new Expense(amount, category, date));
-        System.out.println("✓ Expense recorded.");
+        // Save to database
+        ExpenseDAO expenseDAO = new ExpenseDAO();
+        boolean dbSuccess = expenseDAO.addExpense(amount, category, date);
+        if (dbSuccess) {
+            System.out.println("✓ Expense recorded and saved to database.");
+        } else {
+            System.out.println("✗ Error saving expense to database.");
+        }
     }
 
     public void viewAllExpenses() {

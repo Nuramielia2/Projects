@@ -15,7 +15,14 @@ public class GoalManager {
     public void createGoal(String description, double targetAmount, LocalDate deadline) {
         Goal goal = new Goal(description, targetAmount, deadline);
         goals.add(goal);
-        System.out.println("✅ Goal created: " + goal);
+        // Save to database
+        GoalDAO goalDAO = new GoalDAO();
+        boolean dbSuccess = goalDAO.addGoal(description, targetAmount, deadline);
+        if (dbSuccess) {
+            System.out.println("✅ Goal created and saved to database: " + goal);
+        } else {
+            System.out.println("❌ Error saving goal to database.");
+        }
     }
     
     public List<Goal> getAllGoals() {

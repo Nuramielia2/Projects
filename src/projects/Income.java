@@ -10,7 +10,7 @@ import java.util.Objects;
  * @author Amielia
  */
 public class Income {
-    private int id;
+    private int idincome;
     private double amount;
     private String source;
     private LocalDate date;
@@ -24,7 +24,7 @@ public class Income {
      * @param date The date of income
      */
     public Income(double amount, String source, LocalDate date) {
-        this.id = nextId++;
+        this.idincome = nextId++;
         this.amount = amount;
         this.source = source;
         this.date = date;
@@ -33,20 +33,20 @@ public class Income {
     /**
      * Constructor for creating an income record with a specific ID.
      * 
-     * @param id The income record ID
+     * @param idincome The income record ID
      * @param amount The income amount
      * @param source The source of income
      * @param date The date of income
      */
-    public Income(int id, double amount, String source, LocalDate date) {
-        this.id = id;
+    public Income(int idincome, double amount, String source, LocalDate date) {
+        this.idincome = idincome;
         this.amount = amount;
         this.source = source;
         this.date = date;
     }
     
     // Getters
-    public int getId() { return id; }
+    public int getId() { return idincome; }
     public double getAmount() { return amount; }
     public String getSource() { return source; }
     public LocalDate getDate() { return date; }
@@ -65,7 +65,7 @@ public class Income {
     public String toString() {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         return String.format("Income #%d: $%.2f from %s on %s", 
-                           id, amount, source, date.format(formatter));
+                           idincome, amount, source, date.format(formatter));
     }
     
     /**
@@ -79,7 +79,7 @@ public class Income {
         if (this == obj) return true;
         if (obj == null || getClass() != obj.getClass()) return false;
         Income income = (Income) obj;
-        return id == income.id;
+        return idincome == income.idincome;
     }
     
     /**
@@ -89,6 +89,6 @@ public class Income {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(id);
+        return Objects.hash(idincome);
     }
 } 

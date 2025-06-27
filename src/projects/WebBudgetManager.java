@@ -39,6 +39,8 @@ public class WebBudgetManager {
         server.createContext("/goal", new GoalHandler());
         server.createContext("/view-goal", new ViewGoalHandler());
         server.createContext("/report", new FinancialReportHandler());
+        server.createContext("/show-chart", new ShowChartHandler());
+
         
         server.setExecutor(null);
         server.start();
@@ -394,6 +396,38 @@ public class WebBudgetManager {
         }
     }
     
+    static class ShowChartHandler implements HttpHandler {
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String sessionId = getSessionId(exchange);
+        User currentUser = sessions.get(sessionId);
+
+        if (currentUser == null) {
+            exchange.getResponseHeaders().add("Location", "/");
+            exchange.sendResponseHeaders(302, -1);
+            return;
+        }
+
+        // Get income and expenses
+        IncomeDAO incomeDAO = new IncomeDAO();
+        ExpenseDAO expenseDAO = new ExpenseDAO();
+
+        double totalIncome = incomeDAO.getTotalIncomeByUser(currentUser.getUserId());
+        double totalExpenses = expenseDAO.getExpensesByUserId(currentUser.getUserId())
+                                         .stream().mapToDouble(Expense::getAmount).sum();
+
+        // Show the chart window
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            new ChartWindow(totalIncome, totalExpenses).setVisible(true);
+        });
+
+        // Redirect back to financial report page
+        exchange.getResponseHeaders().add("Location", "/financial-report");
+        exchange.sendResponseHeaders(302, -1);
+    }
+}
+
+    
     private static String generateMainPage(User currentUser) {
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>");
@@ -663,6 +697,8 @@ public class WebBudgetManager {
         return html.toString();
     }
     
+    
+    
     private static String generateFinancialReportPage(User currentUser) {
     StringBuilder html = new StringBuilder();
     html.append("<!DOCTYPE html><html><head><title>Financial Report</title>");
@@ -699,6 +735,12 @@ public class WebBudgetManager {
     } else {
         html.append("<p style='color: blue;'>⚖️ Your income and expenses are balanced.</p>");
     }
+    html.append("</div>");
+    
+    html.append("<form method='POST' action='/show-chart'>");
+    html.append("<input type='submit' value='📊 View Income vs Expense Chart'>");
+    html.append("</form>");
+    
     html.append("</div>");
 
     html.append("<p><a href='/'>Back to Home</a></p>");

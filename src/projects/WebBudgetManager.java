@@ -22,7 +22,6 @@ public class WebBudgetManager {
     private static UserManager userManager = new UserManager();
     private static IncomeManager incomeManager = new IncomeManager();
     private static ExpenseManager expenseManager = new ExpenseManager();
-    private static GoalManager goalManager = new GoalManager();
     private static Map<String, User> sessions = new ConcurrentHashMap<>();
     
     public static void main(String[] args) throws IOException {
@@ -36,8 +35,6 @@ public class WebBudgetManager {
         server.createContext("/expense", new ExpenseHandler());
         server.createContext("/view-income", new ViewIncomeHandler());
         server.createContext("/view-expense", new ViewExpenseHandler());
-        server.createContext("/goal", new GoalHandler());
-        server.createContext("/view-goal", new ViewGoalHandler());
         server.createContext("/report", new FinancialReportHandler());
         server.createContext("/show-chart", new ShowChartHandler());
 
@@ -324,61 +321,6 @@ public class WebBudgetManager {
         }
     }
     
-    static class GoalHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes());
-                Map<String, String> params = parseParams(body);
-                
-                try {
-                    String description = params.get("description");
-                    double targetAmount = Double.parseDouble(params.get("targetAmount"));
-                    LocalDate deadline = LocalDate.parse(params.get("deadline"));
-                    
-                    goalManager.createGoal(description, targetAmount, deadline);
-                    
-                    exchange.getResponseHeaders().add("Location", "/");
-                    exchange.sendResponseHeaders(302, -1);
-                } catch (Exception e) {
-                    System.out.println("❌ Error creating goal: " + e.getMessage());
-                    exchange.getResponseHeaders().add("Location", "/");
-                    exchange.sendResponseHeaders(302, -1);
-                }
-            } else {
-                String html = generateGoalForm();
-                sendResponse(exchange, html);
-            }
-        }
-    }
-    
-    
-    static class ViewGoalHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            String html = generateViewGoalPage();
-            sendResponse(exchange, html);
-        }
-    }
-    
     static class FinancialReportHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -475,15 +417,9 @@ public class WebBudgetManager {
             html.append("<div class='menu'>");
             html.append("<a href='/income'>💰 Record Income</a>");
             html.append("<a href='/expense'>💸 Record Expense</a>");
-            html.append("<a href='/budget'>📋 Create Budget</a>");
-            html.append("<a href='/goal'>🎯 Set Goal</a>");
             html.append("<a href='/view-income'>📊 View Income</a>");
             html.append("<a href='/view-expense'>📊 View Expenses</a>");
-            html.append("<a href='/view-budget'>📋 View Budgets</a>");
-            html.append("<a href='/view-goal'>🎯 View Goals</a>");
             html.append("<a href='/report'>📈 Financial Report</a>");
-            html.append("<a href='/edit-income'>✏️ Edit Income</a>");
-            html.append("<a href='/edit-expense'>✏️ Edit Expenses</a>");
             html.append("<a href='/logout' class='logout'>🚪 Logout</a>");
             html.append("</div>");
         }
@@ -636,68 +572,6 @@ public class WebBudgetManager {
         }
         return params;
     }
-    
-    private static String generateGoalForm() {
-        return "<!DOCTYPE html><html><head><title>Set Goal</title>" +
-               "<style>body { font-family: Arial, sans-serif; margin: 20px; }" +
-               ".container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }" +
-               ".form-group { margin-bottom: 15px; }" +
-               "label { display: block; margin-bottom: 5px; }" +
-               "input, textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }" +
-               "button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }" +
-               "</style></head><body>" +
-               "<div class='container'>" +
-               "<h1>🎯 Set Financial Goal</h1>" +
-               "<form action='/goal' method='post'>" +
-               "<div class='form-group'><label>Description:</label><input type='text' name='description' required></div>" +
-               "<div class='form-group'><label>Target Amount ($):</label><input type='number' step='0.01' name='targetAmount' required></div>" +
-               "<div class='form-group'><label>Deadline:</label><input type='date' name='deadline' required></div>" +
-               "<button type='submit'>Set Goal</button>" +
-               "</form>" +
-               "<p><a href='/'>Back to Home</a></p>" +
-               "</div></body></html>";
-    }
-    
-    private static String generateViewGoalPage() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><title>View Goals</title>");
-        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
-        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #4CAF50; }");
-        html.append(".progress { background: #ddd; border-radius: 4px; height: 20px; margin: 5px 0; }");
-        html.append(".progress-bar { background: #4CAF50; height: 100%; border-radius: 4px; transition: width 0.3s; }");
-        html.append("</style></head><body>");
-        html.append("<div class='container'>");
-        html.append("<h1>🎯 Financial Goals</h1>");
-        
-        List<Goal> goals = goalManager.getAllGoals();
-        if (goals.isEmpty()) {
-            html.append("<p>No goals found.</p>");
-        } else {
-            for (Goal goal : goals) {
-                html.append("<div class='record'>");
-                html.append("<strong>ID:</strong> ").append(goal.getId()).append("<br>");
-                html.append("<strong>Description:</strong> ").append(goal.getDescription()).append("<br>");
-                html.append("<strong>Target:</strong> $").append(String.format("%.2f", goal.getTargetAmount())).append("<br>");
-                html.append("<strong>Current Savings:</strong> $").append(String.format("%.2f", goal.getCurrentSavings())).append("<br>");
-                html.append("<strong>Progress:</strong> ").append(String.format("%.1f", goal.getProgress())).append("%<br>");
-                html.append("<div class='progress'><div class='progress-bar' style='width: ").append(goal.getProgress()).append("%'></div></div>");
-                html.append("<strong>Deadline:</strong> ").append(goal.getDeadline());
-                if (goal.isCompleted()) {
-                    html.append(" <span style='color: green; font-weight: bold;'>✓ COMPLETED!</span>");
-                } else if (goal.isOverdue()) {
-                    html.append(" <span style='color: red; font-weight: bold;'>⚠ OVERDUE!</span>");
-                }
-                html.append("</div>");
-            }
-        }
-        
-        html.append("<p><a href='/'>Back to Home</a></p>");
-        html.append("</div></body></html>");
-        return html.toString();
-    }
-    
-    
     
     private static String generateFinancialReportPage(User currentUser) {
     StringBuilder html = new StringBuilder();

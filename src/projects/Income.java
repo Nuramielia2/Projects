@@ -1,94 +1,60 @@
 package projects;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.sql.Date;
+import java.text.SimpleDateFormat;
 import java.util.Objects;
 
-/**
- * Represents an income record in the personal budget manager.
- * 
- * @author Amielia
- */
 public class Income {
-    private int idincome;
+    private int id;
     private double amount;
     private String source;
-    private LocalDate date;
-    private static int nextId = 1;
-    
-    /**
-     * Constructor for creating a new income record.
-     * 
-     * @param amount The income amount
-     * @param source The source of income
-     * @param date The date of income
-     */
-    public Income(double amount, String source, LocalDate date) {
-        this.idincome = nextId++;
+    private Date date;
+    private int userId;  // NEW
+
+    // Constructor for inserting new income
+    public Income(double amount, String source, Date date, int userId) {
         this.amount = amount;
         this.source = source;
         this.date = date;
+        this.userId = userId;
     }
-    
-    /**
-     * Constructor for creating an income record with a specific ID.
-     * 
-     * @param idincome The income record ID
-     * @param amount The income amount
-     * @param source The source of income
-     * @param date The date of income
-     */
-    public Income(int idincome, double amount, String source, LocalDate date) {
-        this.idincome = idincome;
+
+    // Constructor for retrieving income from DB
+    public Income(int id, double amount, String source, Date date, int userId) {
+        this.id = id;
         this.amount = amount;
         this.source = source;
         this.date = date;
+        this.userId = userId;
     }
-    
-    // Getters
-    public int getId() { return idincome; }
+
+    public int getId() { return id; }
     public double getAmount() { return amount; }
     public String getSource() { return source; }
-    public LocalDate getDate() { return date; }
-    
-    // Setters
+    public Date getDate() { return date; }
+    public int getUserId() { return userId; }
+
     public void setAmount(double amount) { this.amount = amount; }
     public void setSource(String source) { this.source = source; }
-    public void setDate(LocalDate date) { this.date = date; }
-    
-    /**
-     * Returns a formatted string representation of the income record.
-     * 
-     * @return Formatted income record string
-     */
+    public void setDate(Date date) { this.date = date; }
+    public void setUserId(int userId) { this.userId = userId; }
+
     @Override
     public String toString() {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-        return String.format("Income #%d: $%.2f from %s on %s", 
-                           idincome, amount, source, date.format(formatter));
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
+        return String.format("Income: $%.2f from %s on %s", amount, source, formatter.format(date));
     }
-    
-    /**
-     * Checks if this income record equals another object.
-     * 
-     * @param obj The object to compare with
-     * @return true if objects are equal, false otherwise
-     */
+
     @Override
     public boolean equals(Object obj) {
         if (this == obj) return true;
         if (obj == null || getClass() != obj.getClass()) return false;
         Income income = (Income) obj;
-        return idincome == income.idincome;
+        return id == income.id;
     }
-    
-    /**
-     * Returns the hash code for this income record.
-     * 
-     * @return Hash code
-     */
+
     @Override
     public int hashCode() {
-        return Objects.hash(idincome);
+        return Objects.hash(id);
     }
-} 
+}

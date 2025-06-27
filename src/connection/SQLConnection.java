@@ -4,41 +4,25 @@
  */
 package connection;
 
+import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
-/**
- *
- * @author Nikeisha
- */
 public class SQLConnection {
     private static SQLConnection instance;
-    private String url = "jdbc:mysql://localhost:3306/budgetmandb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
- // Full URL with database name
-    private String username = "root";
-    private String password = "Upm20222023!";
-    private java.sql.Connection connection;    
-    
-    private SQLConnection() { // Private constructor
+
+    private final String url = "jdbc:mysql://localhost:3306/budgetmandb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    private final String username = "root";
+    private final String password = "Upm20222023!";
+
+    private SQLConnection() {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver"); // MySQL driver
-            connection = DriverManager.getConnection(url, username, password);
+            Class.forName("com.mysql.cj.jdbc.Driver"); // Load MySQL driver
         } catch (ClassNotFoundException e) {
-            System.err.println("Driver not found: " + e); // Use System.err for errors
-            e.printStackTrace();
-            // Consider throwing a custom exception here to handle this more gracefully
+            System.err.println("❌ Driver not found: " + e);
             throw new RuntimeException("Failed to load database driver", e);
-        } catch (SQLException e) {
-            System.err.println("Connection error: " + e);
-            e.printStackTrace();
-            // Consider throwing a custom exception here
-            throw new RuntimeException("Failed to connect to database", e);
         }
     }
-    public java.sql.Connection getConnection() {
-    return connection;
-}
-
 
     public static SQLConnection getInstance() {
         if (instance == null) {
@@ -46,17 +30,13 @@ public class SQLConnection {
         }
         return instance;
     }
-    
-    public void closeConnection() {
+
+    public Connection getConnection() {
         try {
-            if (connection != null) {
-                connection.close();
-            }
+            return DriverManager.getConnection(url, username, password); // Always return a fresh connection
         } catch (SQLException e) {
-            System.err.println("Error closing connection: " + e);
-            e.printStackTrace();
-        } finally {
-            instance = null; // Reset instance on close to allow re-connection
+            System.err.println("❌ Failed to connect to database: " + e);
+            throw new RuntimeException("Failed to connect to database", e);
         }
     }
 }

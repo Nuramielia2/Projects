@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.time.LocalDate;
+import java.sql.Date;
 
 /**
  * Simple web-based Personal Budget Manager using Java's built-in HTTP server
@@ -21,7 +22,6 @@ public class WebBudgetManager {
     private static UserManager userManager = new UserManager();
     private static IncomeManager incomeManager = new IncomeManager();
     private static ExpenseManager expenseManager = new ExpenseManager();
-    private static BudgetManager budgetManager = new BudgetManager();
     private static GoalManager goalManager = new GoalManager();
     private static Map<String, User> sessions = new ConcurrentHashMap<>();
     
@@ -36,13 +36,9 @@ public class WebBudgetManager {
         server.createContext("/expense", new ExpenseHandler());
         server.createContext("/view-income", new ViewIncomeHandler());
         server.createContext("/view-expense", new ViewExpenseHandler());
-        server.createContext("/budget", new BudgetHandler());
-        server.createContext("/view-budget", new ViewBudgetHandler());
         server.createContext("/goal", new GoalHandler());
         server.createContext("/view-goal", new ViewGoalHandler());
         server.createContext("/report", new FinancialReportHandler());
-        server.createContext("/edit-income", new EditIncomeHandler());
-        server.createContext("/edit-expense", new EditExpenseHandler());
         
         server.setExecutor(null);
         server.start();
@@ -129,57 +125,66 @@ public class WebBudgetManager {
     }
     
     static class LoginHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes());
-                Map<String, String> params = parseParams(body);
-                
-                String username = params.get("username");
-                String password = params.get("password");
-                
-                if (userManager.login(username, password)) {
-                    String sessionId = java.util.UUID.randomUUID().toString();
-                    sessions.put(sessionId, userManager.getCurrentUser());
-                    
-                    exchange.getResponseHeaders().add("Set-Cookie", "session=" + sessionId);
-                    exchange.getResponseHeaders().add("Location", "/");
-                    exchange.sendResponseHeaders(302, -1);
-                } else {
-                    String html = generateMainPage(null) + "<script>alert('Login failed!');</script>";
-                    sendResponse(exchange, html);
-                }
-            } else {
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        if ("POST".equals(exchange.getRequestMethod())) {
+            String body = new String(exchange.getRequestBody().readAllBytes());
+            Map<String, String> params = parseParams(body);
+
+            String username = params.get("username");
+            String password = params.get("password");
+
+            UserDAO userDAO = new UserDAO();
+            User user = userDAO.findUser(username, password);
+
+            if (user != null) {
+                String sessionId = java.util.UUID.randomUUID().toString();
+                sessions.put(sessionId, user); // Store full user with userId
+
+                exchange.getResponseHeaders().add("Set-Cookie", "session=" + sessionId);
                 exchange.getResponseHeaders().add("Location", "/");
                 exchange.sendResponseHeaders(302, -1);
+            } else {
+                String html = generateMainPage(null) + "<script>alert('Login failed!');</script>";
+                sendResponse(exchange, html);
             }
+        } else {
+            exchange.getResponseHeaders().add("Location", "/");
+            exchange.sendResponseHeaders(302, -1);
         }
     }
+}
+
     
     static class RegisterHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes());
-                Map<String, String> params = parseParams(body);
-                
-                String username = params.get("username");
-                String email = params.get("email");
-                String password = params.get("password");
-                
-                if (userManager.register(username, password, email)) {
-                    String html = generateMainPage(null) + "<script>alert('Registration successful! Please login.');</script>";
-                    sendResponse(exchange, html);
-                } else {
-                    String html = generateMainPage(null) + "<script>alert('Registration failed! Username may already exist.');</script>";
-                    sendResponse(exchange, html);
-                }
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        if ("POST".equals(exchange.getRequestMethod())) {
+            String body = new String(exchange.getRequestBody().readAllBytes());
+            Map<String, String> params = parseParams(body);
+
+            String username = params.get("username");
+            String email = params.get("email");
+            String password = params.get("password");
+
+            UserDAO userDAO = new UserDAO();
+            boolean success = userDAO.addUser(username, password, email);
+
+            String html;
+            if (success) {
+                html = generateMainPage(null) + "<script>alert('Registration successful! Please login.');</script>";
             } else {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
+                html = generateMainPage(null) + "<script>alert('Registration failed! Username may already exist.');</script>";
             }
+
+            sendResponse(exchange, html);
+        } else {
+            exchange.getResponseHeaders().add("Location", "/");
+            exchange.sendResponseHeaders(302, -1);
         }
     }
+}
+
     
     static class LogoutHandler implements HttpHandler {
         @Override
@@ -194,109 +199,111 @@ public class WebBudgetManager {
     }
     
     static class IncomeHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes());
-                Map<String, String> params = parseParams(body);
-                
-                // Handle income recording
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String sessionId = getSessionId(exchange);
+        User currentUser = sessions.get(sessionId);
+
+        if (currentUser == null) {
+            exchange.getResponseHeaders().add("Location", "/");
+            exchange.sendResponseHeaders(302, -1);
+            return;
+        }
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            String body = new String(exchange.getRequestBody().readAllBytes());
+            Map<String, String> params = parseParams(body);
+
+            try {
                 double amount = Double.parseDouble(params.get("amount"));
                 String source = params.get("source");
-                String dateStr = params.get("date");
-                
-                // Parse date and create income record
-                try {
-                    java.time.LocalDate date = java.time.LocalDate.parse(dateStr);
-                    Income income = new Income(amount, source, date);
-                    incomeManager.getIncomeRecords().add(income);
-                    System.out.println("✅ Income recorded: $" + amount + " from " + source);
-                    System.out.println("📊 Total income records now: " + incomeManager.getIncomeRecords().size());
-                } catch (Exception e) {
-                    System.out.println("❌ Error recording income: " + e.getMessage());
+                Date date = Date.valueOf(params.get("date"));
+
+                Income income = new Income(amount, source, date, currentUser.getUserId());
+                IncomeDAO dao = new IncomeDAO();
+
+                if (dao.addIncome(income)) {
+                    System.out.println("💾 Income successfully saved to database.");
+                } else {
+                    System.out.println("⚠️ Failed to save income to database.");
                 }
-                
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-            } else {
-                String html = generateIncomeForm();
-                sendResponse(exchange, html);
+
+            } catch (Exception e) {
+                System.out.println("❌ Error recording income: " + e.getMessage());
+                e.printStackTrace();
             }
-        }
-    }
-    
-    static class ExpenseHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes());
-                Map<String, String> params = parseParams(body);
-                
-                // Handle expense recording
-                double amount = Double.parseDouble(params.get("amount"));
-                String category = params.get("category");
-                String dateStr = params.get("date");
-                
-                // Parse date and create expense record
-                try {
-                    java.time.LocalDate date = java.time.LocalDate.parse(dateStr);
-                    Expense expense = new Expense(amount, category, date);
-                    expenseManager.getExpenses().add(expense);
-                    System.out.println("✅ Expense recorded: $" + amount + " for " + category);
-                } catch (Exception e) {
-                    System.out.println("❌ Error recording expense: " + e.getMessage());
-                }
-                
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-            } else {
-                String html = generateExpenseForm();
-                sendResponse(exchange, html);
-            }
-        }
-    }
-    
-    static class ViewIncomeHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            // Debug: Check how many records are in the manager
-            List<Income> incomes = incomeManager.getIncomeRecords();
-            System.out.println("🔍 ViewIncome: Found " + incomes.size() + " income records");
-            for (Income income : incomes) {
-                System.out.println("  - Income #" + income.getId() + ": $" + income.getAmount() + " from " + income.getSource());
-            }
-            
-            String html = generateViewIncomePage();
+
+            exchange.getResponseHeaders().add("Location", "/view-income");
+            exchange.sendResponseHeaders(302, -1);
+
+        } else {
+            String html = generateIncomeForm(); // Call the styled form
             sendResponse(exchange, html);
         }
     }
+}
+
+    static class ExpenseHandler implements HttpHandler {
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String sessionId = getSessionId(exchange);
+        User currentUser = sessions.get(sessionId);
+
+        if (currentUser == null) {
+            exchange.getResponseHeaders().add("Location", "/");
+            exchange.sendResponseHeaders(302, -1);
+            return;
+        }
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            String body = new String(exchange.getRequestBody().readAllBytes());
+            Map<String, String> params = parseParams(body);
+
+            try {
+                double amount = Double.parseDouble(params.get("amount"));
+                String category = params.get("category");
+                Date date = Date.valueOf(params.get("date"));
+
+                // FIXED: Added currentUser.getUserId()
+                boolean success = expenseManager.recordExpense(amount, category, date, currentUser.getUserId());
+
+                if (success) {
+                    System.out.println("✅ Expense recorded: $" + amount + " for " + category);
+                } else {
+                    System.out.println("❌ Failed to record expense in database.");
+                }
+            } catch (Exception e) {
+                System.out.println("❌ Error parsing or recording expense: " + e.getMessage());
+            }
+
+            exchange.getResponseHeaders().add("Location", "/");
+            exchange.sendResponseHeaders(302, -1);
+        } else {
+            String html = generateExpenseForm(); // your existing HTML form
+            sendResponse(exchange, html);
+        }
+    }
+}
+
+    
+    static class ViewIncomeHandler implements HttpHandler {
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String sessionId = getSessionId(exchange);
+        User currentUser = sessions.get(sessionId);
+
+        if (currentUser == null) {
+            exchange.getResponseHeaders().add("Location", "/");
+            exchange.sendResponseHeaders(302, -1);
+            return;
+        }
+
+        String html = generateViewIncomePage(currentUser);
+        sendResponse(exchange, html);
+    }
+}
+
+
     
     static class ViewExpenseHandler implements HttpHandler {
         @Override
@@ -310,47 +317,8 @@ public class WebBudgetManager {
                 return;
             }
             
-            String html = generateViewExpensePage();
+            String html = generateViewExpensePage(currentUser); //
             sendResponse(exchange, html);
-        }
-    }
-    
-    static class BudgetHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes());
-                Map<String, String> params = parseParams(body);
-                
-                try {
-                    double amount = Double.parseDouble(params.get("amount"));
-                    String timePeriod = params.get("timePeriod");
-                    LocalDate startDate = LocalDate.parse(params.get("startDate"));
-                    LocalDate endDate = LocalDate.parse(params.get("endDate"));
-                    String description = params.get("description");
-                    
-                    budgetManager.createBudget(amount, timePeriod, startDate, endDate, description);
-                    
-                    exchange.getResponseHeaders().add("Location", "/");
-                    exchange.sendResponseHeaders(302, -1);
-                } catch (Exception e) {
-                    System.out.println("❌ Error creating budget: " + e.getMessage());
-                    exchange.getResponseHeaders().add("Location", "/");
-                    exchange.sendResponseHeaders(302, -1);
-                }
-            } else {
-                String html = generateBudgetForm();
-                sendResponse(exchange, html);
-            }
         }
     }
     
@@ -391,22 +359,6 @@ public class WebBudgetManager {
         }
     }
     
-    static class ViewBudgetHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            String html = generateViewBudgetPage();
-            sendResponse(exchange, html);
-        }
-    }
     
     static class ViewGoalHandler implements HttpHandler {
         @Override
@@ -437,41 +389,7 @@ public class WebBudgetManager {
                 return;
             }
             
-            String html = generateFinancialReportPage();
-            sendResponse(exchange, html);
-        }
-    }
-    
-    static class EditIncomeHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            String html = generateEditIncomePage();
-            sendResponse(exchange, html);
-        }
-    }
-    
-    static class EditExpenseHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String sessionId = getSessionId(exchange);
-            User currentUser = sessions.get(sessionId);
-            
-            if (currentUser == null) {
-                exchange.getResponseHeaders().add("Location", "/");
-                exchange.sendResponseHeaders(302, -1);
-                return;
-            }
-            
-            String html = generateEditExpensePage();
+            String html = generateFinancialReportPage(currentUser);
             sendResponse(exchange, html);
         }
     }
@@ -582,71 +500,75 @@ public class WebBudgetManager {
                "</div></body></html>";
     }
     
-    private static String generateViewIncomePage() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><title>View Income</title>");
-        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
-        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #4CAF50; }");
-        html.append(".total { font-weight: bold; font-size: 18px; color: #4CAF50; margin-top: 20px; }");
-        html.append("</style></head><body>");
-        html.append("<div class='container'>");
-        html.append("<h1>📊 Income Records</h1>");
-        
-        List<Income> incomes = incomeManager.getIncomeRecords();
-        if (incomes.isEmpty()) {
-            html.append("<p>No income records found.</p>");
-        } else {
-            double total = 0;
-            for (Income income : incomes) {
-                html.append("<div class='record'>");
-                html.append("<strong>ID:</strong> ").append(income.getId()).append("<br>");
-                html.append("<strong>Amount:</strong> $").append(String.format("%.2f", income.getAmount())).append("<br>");
-                html.append("<strong>Source:</strong> ").append(income.getSource()).append("<br>");
-                html.append("<strong>Date:</strong> ").append(income.getDate());
-                html.append("</div>");
-                total += income.getAmount();
-            }
-            html.append("<div class='total'>Total Income: $").append(String.format("%.2f", total)).append("</div>");
+    private static String generateViewExpensePage(User currentUser) {
+    StringBuilder html = new StringBuilder();
+    html.append("<!DOCTYPE html><html><head><title>View Expenses</title>");
+    html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
+    html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
+    html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #f44336; }");
+    html.append(".total { font-weight: bold; font-size: 18px; color: #f44336; margin-top: 20px; }");
+    html.append("</style></head><body>");
+    html.append("<div class='container'>");
+    html.append("<h1>📊 Expense Records</h1>");
+
+    List<Expense> expenses = expenseManager.getExpensesForUser(currentUser.getUserId());
+    if (expenses.isEmpty()) {
+        html.append("<p>No expense records found.</p>");
+    } else {
+        double total = 0;
+        for (Expense expense : expenses) {
+            html.append("<div class='record'>");
+            html.append("<strong>ID:</strong> ").append(expense.getId()).append("<br>");
+            html.append("<strong>Amount:</strong> $").append(String.format("%.2f", expense.getAmount())).append("<br>");
+            html.append("<strong>Category:</strong> ").append(expense.getCategory()).append("<br>");
+            html.append("<strong>Date:</strong> ").append(expense.getDate());
+            html.append("</div>");
+            total += expense.getAmount();
         }
-        
-        html.append("<p><a href='/'>Back to Home</a></p>");
-        html.append("</div></body></html>");
-        return html.toString();
+        html.append("<div class='total'>Total Expenses: $").append(String.format("%.2f", total)).append("</div>");
     }
+
+    html.append("<p><a href='/'>Back to Home</a></p>");
+    html.append("</div></body></html>");
+    return html.toString();
+}
     
-    private static String generateViewExpensePage() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><title>View Expenses</title>");
-        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
-        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #f44336; }");
-        html.append(".total { font-weight: bold; font-size: 18px; color: #f44336; margin-top: 20px; }");
-        html.append("</style></head><body>");
-        html.append("<div class='container'>");
-        html.append("<h1>📊 Expense Records</h1>");
-        
-        List<Expense> expenses = expenseManager.getExpenses();
-        if (expenses.isEmpty()) {
-            html.append("<p>No expense records found.</p>");
-        } else {
-            double total = 0;
-            for (Expense expense : expenses) {
-                html.append("<div class='record'>");
-                html.append("<strong>ID:</strong> ").append(expense.getId()).append("<br>");
-                html.append("<strong>Amount:</strong> $").append(String.format("%.2f", expense.getAmount())).append("<br>");
-                html.append("<strong>Category:</strong> ").append(expense.getCategory()).append("<br>");
-                html.append("<strong>Date:</strong> ").append(expense.getDate());
-                html.append("</div>");
-                total += expense.getAmount();
-            }
-            html.append("<div class='total'>Total Expenses: $").append(String.format("%.2f", total)).append("</div>");
+    private static String generateViewIncomePage(User currentUser) {
+    StringBuilder html = new StringBuilder();
+    html.append("<!DOCTYPE html><html><head><title>View Income</title>");
+    html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
+    html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
+    html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #4CAF50; }");
+    html.append(".total { font-weight: bold; font-size: 18px; color: #4CAF50; margin-top: 20px; }");
+    html.append("</style></head><body>");
+    html.append("<div class='container'>");
+    html.append("<h1>💵 Income Records</h1>");
+
+    IncomeDAO dao = new IncomeDAO();
+    List<Income> incomes = dao.getAllIncomeForUser(currentUser.getUserId());
+
+    if (incomes.isEmpty()) {
+        html.append("<p>No income records found.</p>");
+    } else {
+        double total = 0;
+        for (Income income : incomes) {
+            html.append("<div class='record'>");
+            html.append("<strong>ID:</strong> ").append(income.getId()).append("<br>");
+            html.append("<strong>Amount:</strong> $").append(String.format("%.2f", income.getAmount())).append("<br>");
+            html.append("<strong>Source:</strong> ").append(income.getSource()).append("<br>");
+            html.append("<strong>Date:</strong> ").append(income.getDate());
+            html.append("</div>");
+            total += income.getAmount();
         }
-        
-        html.append("<p><a href='/'>Back to Home</a></p>");
-        html.append("</div></body></html>");
-        return html.toString();
+        html.append("<div class='total'>Total Income: $").append(String.format("%.2f", total)).append("</div>");
     }
+
+    html.append("<p><a href='/'>Back to Home</a></p>");
+    html.append("</div></body></html>");
+    return html.toString();
+}
+
+
     
     private static void sendResponse(HttpExchange exchange, String response) throws IOException {
         byte[] responseBytes = response.getBytes("UTF-8");
@@ -681,33 +603,6 @@ public class WebBudgetManager {
         return params;
     }
     
-    private static String generateBudgetForm() {
-        return "<!DOCTYPE html><html><head><title>Create Budget</title>" +
-               "<style>body { font-family: Arial, sans-serif; margin: 20px; }" +
-               ".container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }" +
-               ".form-group { margin-bottom: 15px; }" +
-               "label { display: block; margin-bottom: 5px; }" +
-               "input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }" +
-               "button { background-color: #2196F3; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }" +
-               "</style></head><body>" +
-               "<div class='container'>" +
-               "<h1>📋 Create Budget</h1>" +
-               "<form action='/budget' method='post'>" +
-               "<div class='form-group'><label>Amount ($):</label><input type='number' step='0.01' name='amount' required></div>" +
-               "<div class='form-group'><label>Time Period:</label><select name='timePeriod' required>" +
-               "<option value='Weekly'>Weekly</option>" +
-               "<option value='Monthly'>Monthly</option>" +
-               "<option value='Yearly'>Yearly</option>" +
-               "</select></div>" +
-               "<div class='form-group'><label>Start Date:</label><input type='date' name='startDate' required></div>" +
-               "<div class='form-group'><label>End Date:</label><input type='date' name='endDate' required></div>" +
-               "<div class='form-group'><label>Description:</label><input type='text' name='description' required></div>" +
-               "<button type='submit'>Create Budget</button>" +
-               "</form>" +
-               "<p><a href='/'>Back to Home</a></p>" +
-               "</div></body></html>";
-    }
-    
     private static String generateGoalForm() {
         return "<!DOCTYPE html><html><head><title>Set Goal</title>" +
                "<style>body { font-family: Arial, sans-serif; margin: 20px; }" +
@@ -727,37 +622,6 @@ public class WebBudgetManager {
                "</form>" +
                "<p><a href='/'>Back to Home</a></p>" +
                "</div></body></html>";
-    }
-    
-    private static String generateViewBudgetPage() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><title>View Budgets</title>");
-        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
-        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #2196F3; }");
-        html.append("</style></head><body>");
-        html.append("<div class='container'>");
-        html.append("<h1>📋 Budget Records</h1>");
-        
-        List<Budget> budgets = budgetManager.getAllBudgets();
-        if (budgets.isEmpty()) {
-            html.append("<p>No budget records found.</p>");
-        } else {
-            for (Budget budget : budgets) {
-                html.append("<div class='record'>");
-                html.append("<strong>ID:</strong> ").append(budget.getId()).append("<br>");
-                html.append("<strong>Amount:</strong> $").append(String.format("%.2f", budget.getAmount())).append("<br>");
-                html.append("<strong>Time Period:</strong> ").append(budget.getTimePeriod()).append("<br>");
-                html.append("<strong>Start Date:</strong> ").append(budget.getStartDate()).append("<br>");
-                html.append("<strong>End Date:</strong> ").append(budget.getEndDate()).append("<br>");
-                html.append("<strong>Description:</strong> ").append(budget.getDescription());
-                html.append("</div>");
-            }
-        }
-        
-        html.append("<p><a href='/'>Back to Home</a></p>");
-        html.append("</div></body></html>");
-        return html.toString();
     }
     
     private static String generateViewGoalPage() {
@@ -799,85 +663,48 @@ public class WebBudgetManager {
         return html.toString();
     }
     
-    private static String generateFinancialReportPage() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><title>Financial Report</title>");
-        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
-        html.append(".summary { background: #f9f9f9; padding: 15px; margin: 15px 0; border-radius: 8px; }");
-        html.append(".income { border-left: 4px solid #4CAF50; }");
-        html.append(".expense { border-left: 4px solid #f44336; }");
-        html.append(".balance { border-left: 4px solid #2196F3; font-weight: bold; }");
-        html.append("</style></head><body>");
-        html.append("<div class='container'>");
-        html.append("<h1>📈 Financial Report</h1>");
-        
-        // Calculate totals
-        double totalIncome = incomeManager.getTotalIncome();
-        double totalExpenses = expenseManager.getExpenses().stream().mapToDouble(Expense::getAmount).sum();
-        double balance = totalIncome - totalExpenses;
-        
-        html.append("<div class='summary income'>");
-        html.append("<h3>💰 Total Income: $").append(String.format("%.2f", totalIncome)).append("</h3>");
-        html.append("</div>");
-        
-        html.append("<div class='summary expense'>");
-        html.append("<h3>💸 Total Expenses: $").append(String.format("%.2f", totalExpenses)).append("</h3>");
-        html.append("</div>");
-        
-        html.append("<div class='summary balance'>");
-        html.append("<h3>💳 Net Balance: $").append(String.format("%.2f", balance)).append("</h3>");
-        if (balance > 0) {
-            html.append("<p style='color: green;'>✅ You have a positive balance!</p>");
-        } else if (balance < 0) {
-            html.append("<p style='color: red;'>⚠️ You have a negative balance.</p>");
-        } else {
-            html.append("<p style='color: blue;'>⚖️ Your income and expenses are balanced.</p>");
-        }
-        html.append("</div>");
-        
-        // Goals summary
-        List<Goal> goals = goalManager.getAllGoals();
-        if (!goals.isEmpty()) {
-            html.append("<div class='summary'>");
-            html.append("<h3>🎯 Goals Summary</h3>");
-            html.append("<p>Total Target: $").append(String.format("%.2f", goalManager.getTotalTargetAmount())).append("</p>");
-            html.append("<p>Current Savings: $").append(String.format("%.2f", goalManager.getTotalCurrentSavings())).append("</p>");
-            html.append("</div>");
-        }
-        
-        html.append("<p><a href='/'>Back to Home</a></p>");
-        html.append("</div></body></html>");
-        return html.toString();
+    private static String generateFinancialReportPage(User currentUser) {
+    StringBuilder html = new StringBuilder();
+    html.append("<!DOCTYPE html><html><head><title>Financial Report</title>");
+    html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
+    html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
+    html.append(".summary { background: #f9f9f9; padding: 15px; margin: 15px 0; border-radius: 8px; }");
+    html.append(".income { border-left: 4px solid #4CAF50; }");
+    html.append(".expense { border-left: 4px solid #f44336; }");
+    html.append(".balance { border-left: 4px solid #2196F3; font-weight: bold; }");
+    html.append("</style></head><body>");
+    html.append("<div class='container'>");
+    html.append("<h1>📈 Financial Report</h1>");
+
+    IncomeDAO incomeDAO = new IncomeDAO();
+    ExpenseDAO expenseDAO = new ExpenseDAO();
+
+    double totalIncome = incomeDAO.getTotalIncomeByUser(currentUser.getUserId());
+    double totalExpenses = expenseDAO.getExpensesByUserId(currentUser.getUserId())
+                                     .stream().mapToDouble(Expense::getAmount).sum();
+    double balance = totalIncome - totalExpenses;
+
+    html.append("<div class='summary income'>");
+    html.append("<h3>💰 Total Income: $").append(String.format("%.2f", totalIncome)).append("</h3></div>");
+
+    html.append("<div class='summary expense'>");
+    html.append("<h3>💸 Total Expenses: $").append(String.format("%.2f", totalExpenses)).append("</h3></div>");
+
+    html.append("<div class='summary balance'>");
+    html.append("<h3>💳 Net Balance: $").append(String.format("%.2f", balance)).append("</h3>");
+    if (balance > 0) {
+        html.append("<p style='color: green;'>✅ You have a positive balance!</p>");
+    } else if (balance < 0) {
+        html.append("<p style='color: red;'>⚠️ You have a negative balance.</p>");
+    } else {
+        html.append("<p style='color: blue;'>⚖️ Your income and expenses are balanced.</p>");
     }
+    html.append("</div>");
+
+    html.append("<p><a href='/'>Back to Home</a></p>");
+    html.append("</div></body></html>");
+    return html.toString();
+}
+
     
-    private static String generateEditIncomePage() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><title>Edit Income</title>");
-        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
-        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #4CAF50; }");
-        html.append("</style></head><body>");
-        html.append("<div class='container'>");
-        html.append("<h1>✏️ Edit Income Records</h1>");
-        html.append("<p>Income editing functionality will be implemented in the next version.</p>");
-        html.append("<p><a href='/'>Back to Home</a></p>");
-        html.append("</div></body></html>");
-        return html.toString();
-    }
-    
-    private static String generateEditExpensePage() {
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html><html><head><title>Edit Expenses</title>");
-        html.append("<style>body { font-family: Arial, sans-serif; margin: 20px; }");
-        html.append(".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }");
-        html.append(".record { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 4px; border-left: 4px solid #f44336; }");
-        html.append("</style></head><body>");
-        html.append("<div class='container'>");
-        html.append("<h1>✏️ Edit Expense Records</h1>");
-        html.append("<p>Expense editing functionality will be implemented in the next version.</p>");
-        html.append("<p><a href='/'>Back to Home</a></p>");
-        html.append("</div></body></html>");
-        return html.toString();
-    }
 } 

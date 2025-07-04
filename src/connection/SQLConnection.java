@@ -13,7 +13,7 @@ public class SQLConnection {
 
     private final String url = "jdbc:mysql://localhost:3306/budgetmandb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
     private final String username = "root";
-    private final String password = "Upm20222023!";
+    private final String password = "NFAxpsql15";
 
     private SQLConnection() {
         try {
